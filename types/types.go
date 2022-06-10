@@ -37,6 +37,7 @@ const KeelMatchPreReleaseAnnotation = "keel.sh/matchPreRelease"
 
 // KeelPollScheduleAnnotation - optional variable to setup custom schedule for polling, defaults to @every 10m
 const KeelPollScheduleAnnotation = "keel.sh/pollSchedule"
+const KeelInitContainerAnnotation = "keel.sh/initContainers"
 
 // KeelPollDefaultSchedule - defaul polling schedule
 const KeelPollDefaultSchedule = "@every 1m"

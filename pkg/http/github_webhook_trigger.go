@@ -3,11 +3,12 @@ package http
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/keel-hq/keel/types"
-	"github.com/prometheus/client_golang/prometheus"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/keel-hq/keel/types"
+	"github.com/prometheus/client_golang/prometheus"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -30,7 +31,8 @@ type githubRegistryPackageWebhook struct {
 		Name           string `json:"name"`
 		PackageType    string `json:"package_type"`
 		PackageVersion struct {
-			Version string `json:"version"`
+			Version    string `json:"version"`
+			PackageURL string `json:"package_url"`
 		} `json:"package_version"`
 		UpdatedAt string `json:"updated_at"`
 	} `json:"registry_package"`
@@ -48,6 +50,7 @@ type githubPackageV2Webhook struct {
 		Ecosystem      string `json:"ecosystem"`
 		PackageVersion struct {
 			Name              string `json:"name"`
+			PackageURL        string `json:"package_url"`
 			ContainerMetadata struct {
 				Tag struct {
 					Name   string `json:"name"`
@@ -69,47 +72,6 @@ func (s *TriggerServer) githubHandler(resp http.ResponseWriter, req *http.Reques
 	var imageName, imageTag string
 
 	switch hookEvent {
-	case "package_v2":
-		payload := new(githubPackageV2Webhook)
-		if err := json.NewDecoder(req.Body).Decode(payload); err != nil {
-			log.WithFields(log.Fields{
-				"error": err,
-			}).Error("trigger.githubHandler: failed to decode request")
-			resp.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		if payload.Package.Ecosystem != "CONTAINER" {
-			resp.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(resp, "registry package type was not container")
-		}
-
-		if payload.Package.Name == "" { // github package name
-			resp.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(resp, "repository name cannot be empty")
-			return
-		}
-
-		if payload.Package.Namespace == "" { // github package org
-			resp.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(resp, "repository namespace cannot be empty")
-			return
-		}
-
-		if payload.Package.PackageVersion.ContainerMetadata.Tag.Name == "" { // tag
-			resp.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(resp, "repository tag cannot be empty")
-			return
-		}
-
-		imageName = strings.Join(
-			[]string{"ghcr.io", payload.Package.Namespace, payload.Package.Name},
-			"/",
-		)
-		imageTag = payload.Package.PackageVersion.ContainerMetadata.Tag.Name
-
-		break
-
 	case "registry_package":
 		payload := new(githubRegistryPackageWebhook)
 		if err := json.NewDecoder(req.Body).Decode(payload); err != nil {
@@ -120,47 +82,34 @@ func (s *TriggerServer) githubHandler(resp http.ResponseWriter, req *http.Reques
 			return
 		}
 
-		if payload.RegistryPackage.PackageType != "docker" {
+		if payload.RegistryPackage.PackageType != "CONTAINER" {
 			resp.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(resp, "registry package type was not docker")
-		}
-
-		if payload.Repository.FullName == "" { // github package name
-			resp.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(resp, "repository full name cannot be empty")
+			fmt.Fprintf(resp, "registry package type was not CONTAINER")
 			return
 		}
 
-		if payload.RegistryPackage.Name == "" { // github package name
+		if payload.RegistryPackage.PackageVersion.PackageURL == "" { // tag
 			resp.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(resp, "repository package name cannot be empty")
+			fmt.Fprintf(resp, "package url cannot be empty")
 			return
 		}
 
-		if payload.RegistryPackage.PackageVersion.Version == "" { // tag
-			resp.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(resp, "repository tag cannot be empty")
-			return
-		}
-
-		imageName = strings.Join(
-			[]string{"docker.pkg.github.com", payload.Repository.FullName, payload.RegistryPackage.Name},
-			"/",
-		)
-		imageTag = payload.RegistryPackage.PackageVersion.Version
-
-		break
+		imageData := strings.Split(payload.RegistryPackage.PackageVersion.PackageURL, ":")
+		imageName = imageData[0]
+		imageTag = imageData[1]
 	}
 
-	event := types.Event{}
-	event.CreatedAt = time.Now()
-	event.TriggerName = "github"
-	event.Repository.Name = imageName
-	event.Repository.Tag = imageTag
+	if imageName != "" {
+		event := types.Event{}
+		event.CreatedAt = time.Now()
+		event.TriggerName = "github"
+		event.Repository.Name = imageName
+		event.Repository.Tag = imageTag
 
-	s.trigger(event)
-
-	resp.WriteHeader(http.StatusOK)
-
-	newGithubWebhooksCounter.With(prometheus.Labels{"image": event.Repository.Name}).Inc()
+		s.trigger(event)
+		resp.WriteHeader(http.StatusOK)
+		newGithubWebhooksCounter.With(prometheus.Labels{"image": event.Repository.Name}).Inc()
+	} else {
+		resp.WriteHeader(http.StatusOK)
+	}
 }
