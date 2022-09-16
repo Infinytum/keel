@@ -1,16 +1,16 @@
-FROM --platform=linux/amd64 golang:1.14.2
+FROM golang:1.14.2
 COPY . /go/src/github.com/keel-hq/keel
 WORKDIR /go/src/github.com/keel-hq/keel
 RUN make install
 
-FROM --platform=linux/amd64 node:9.11.1-alpine
+FROM node:9.11.1-alpine
 WORKDIR /app
 COPY ui /app
 RUN yarn
 RUN yarn run lint --no-fix
 RUN yarn run build
 
-FROM --platform=linux/amd64 alpine:latest
+FROM alpine:latest
 RUN apk --no-cache add ca-certificates
 
 VOLUME /data
