@@ -6,9 +6,8 @@ RUN make install
 FROM node:12-alpine
 WORKDIR /app
 COPY ui /app
-RUN yarn
-RUN yarn run lint --no-fix
-RUN yarn run build
+RUN npm i
+RUN npm run build
 
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates
